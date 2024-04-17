@@ -1,5 +1,5 @@
-use notify::{RecursiveMode, Result, Watcher};
-use std::{collections::{HashMap, HashSet}, ops::Range, path::{Path, PathBuf}};
+use notify::{RecursiveMode, Watcher};
+use std::{collections::{HashMap, HashSet}, ops::Range, path::{Path, PathBuf}, time::Duration};
 
 use clap::Parser;
 
@@ -9,7 +9,7 @@ use clap::Parser;
 /// 
 /// Chunks are deduplicated ignoring leading and trailing whitespace, so that when a new chunk is added to a file the empty lines separating it from the previous chunk will not cause the previous chunk to be considered updated, even though the previous chunk now contains trailing newlines.
 ///
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 struct Args {
     /// Concatenate the first chunk of a file before any changed chunks from that file.
     #[arg(short='H', long)]
@@ -26,6 +26,14 @@ struct Args {
     metadata_line_suffix: Option<String>,
 
     path: PathBuf,
+
+    #[arg(short, long, value_parser=parse_duration, default_value="0")]
+    debounce: Duration,
+}
+
+fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseFloatError> {
+    let seconds = arg.parse()?;
+    Ok(std::time::Duration::from_secs_f64(seconds))
 }
 
 pub trait RangeCompose<Rhs> {
@@ -380,23 +388,31 @@ fn walk_directory(config: &Args, state: &mut State, path: &Path) -> std::io::Res
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let mut state = State::default();
 
-    // There's a race condition here, where files can change between the initial walk and the watcher starting up.
+    // @TODO: There's a race condition here, where files can change between the initial walk and the watcher starting up.
     walk_directory(&args, &mut state, &args.path)?;
 
-    // Automatically select the best implementation for your platform.
-    let mut watcher = notify::recommended_watcher(|res| match res {
-        Ok(event) => println!("event: {:?}", event),
-        Err(e) => println!("watch error: {:?}", e),
+    let args2 = args.clone();
+
+    let mut debouncer = notify_debouncer_full::new_debouncer(args2.debounce, None, move |res: notify_debouncer_full::DebounceEventResult| match res {
+        Ok(events) => {
+            for event in events {
+                for path in event.paths.iter() {
+                    if let Err(e) = walk_directory(&args, &mut state, &path) {
+                        eprintln!("walk error: {:?}", e);
+                    }
+                }
+            }
+        },
+        Err(e) => eprintln!("watch error: {:?}", e),
     })?;
 
-    // Add a path to be watched. All files and directories at that path and
-    // below will be monitored for changes.
-    watcher.watch(&args.path, RecursiveMode::Recursive)?;
+    debouncer.watcher().watch(&args2.path, RecursiveMode::Recursive).unwrap();
+    debouncer.cache().add_root(&args2.path, RecursiveMode::Recursive);
 
     loop {
         std::thread::yield_now();
