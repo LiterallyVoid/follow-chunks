@@ -11,7 +11,18 @@ use clap::Parser;
 ///
 #[derive(Parser, Debug, Clone)]
 struct Args {
-    /// Concatenate the first chunk of a file before any changed chunks from that file.
+    path: PathBuf,
+
+    #[arg(short, long, value_parser=parse_duration, default_value="0")]
+    debounce: Duration,
+
+    #[command(flatten)]
+    behavior: Behavior,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct Behavior {
+    /// Print the first chunk of a file before any changed chunks from that file.
     #[arg(short='H', long)]
     header: bool,
 
@@ -25,10 +36,6 @@ struct Args {
     #[arg(short='M', long)]
     metadata_line_suffix: Option<String>,
 
-    path: PathBuf,
-
-    #[arg(short, long, value_parser=parse_duration, default_value="0")]
-    debounce: Duration,
 }
 
 fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseFloatError> {
@@ -345,12 +352,12 @@ fn test_state() {
     );
 }
 
-fn walk_directory(config: &Args, state: &mut State, path: &Path) -> std::io::Result<()> {
+fn walk_directory(behavior: &Behavior, state: &mut State, path: &Path) -> std::io::Result<()> {
     if let Ok(contents) = std::fs::read_to_string(path) {
         let chunks = state.ingest(path.to_owned(), &contents);
 
         for chunk in chunks {
-            if config.metadata_line_prefix.is_some() || config.metadata_line_suffix.is_some() {
+            if behavior.metadata_line_prefix.is_some() || behavior.metadata_line_suffix.is_some() {
                 #[derive(serde::Serialize, serde::Deserialize)]
                 struct Metadata<'a> {
                     #[serde(bound(deserialize = "'de: 'a"))]
@@ -363,9 +370,9 @@ fn walk_directory(config: &Args, state: &mut State, path: &Path) -> std::io::Res
 
                 println!(
                     "{}{}{}",
-                    config.metadata_line_prefix.as_ref().unwrap_or(&String::new()),
+                    behavior.metadata_line_prefix.as_ref().unwrap_or(&String::new()),
                     serde_json::to_string(&metadata).unwrap(),
-                    config.metadata_line_suffix.as_ref().unwrap_or(&String::new()),
+                    behavior.metadata_line_suffix.as_ref().unwrap_or(&String::new()),
                 );
             }
             print!("{chunk}");
@@ -382,7 +389,7 @@ fn walk_directory(config: &Args, state: &mut State, path: &Path) -> std::io::Res
         let entry = entry?;
         let subpath = &entry.path();
 
-        walk_directory(config, state, subpath)?;
+        walk_directory(behavior, state, subpath)?;
     }
 
     Ok(())
@@ -394,7 +401,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut state = State::default();
 
     // @TODO: There's a race condition here, where files can change between the initial walk and the watcher starting up.
-    walk_directory(&args, &mut state, &args.path)?;
+    walk_directory(&args.behavior, &mut state, &args.path)?;
 
     let args2 = args.clone();
 
@@ -402,7 +409,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(events) => {
             for event in events {
                 for path in event.paths.iter() {
-                    if let Err(e) = walk_directory(&args, &mut state, &path) {
+                    if let Err(e) = walk_directory(&args.behavior, &mut state, &path) {
                         eprintln!("walk error: {:?}", e);
                     }
                 }
