@@ -77,7 +77,7 @@ pub trait RangeCut<Cut> {
         Self: Sized;
 }
 
-pub trait RangeExt {
+pub trait RangeAdjacent {
     /// Concatenate `self` and `after`, panicking if `after` doesn't immediately follow `self`.
     ///
     /// ```rust
@@ -118,7 +118,7 @@ pub trait RangeExt {
     fn remove_suffix(self, suffix: Self) -> Self;
 }
 
-impl<T> RangeExt for Range<T>
+impl<T> RangeAdjacent for Range<T>
 where
 T: std::cmp::PartialOrd + std::cmp::PartialEq {
     fn concat(self, after: Self) -> Self {
@@ -153,6 +153,8 @@ where
         (self.start..middle.start, middle.end..self.end)
     }
 }
+
+trait RangeExt<T>: RangeAdjacent + RangeCompose<T> + RangeCut<T> {}
 
 // Returns the range of the first `"\n"` or `"\r\n"` separator in `source`.
 fn first_line_separator(source: &str) -> Option<Range<usize>> {
