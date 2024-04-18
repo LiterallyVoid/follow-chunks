@@ -326,6 +326,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rangecutter"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "836870ad5d60bce367817af50075da56e145fa1589d919b6326c89ed152e592f"
+
+[[package]]
 name = "redox_syscall"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -410,12 +416,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "taildent"
+name = "tail-chunks"
 version = "0.1.0"
 dependencies = [
  "clap",
  "notify",
  "notify-debouncer-full",
+ "rangecutter",
  "serde",
  "serde_json",
 ]

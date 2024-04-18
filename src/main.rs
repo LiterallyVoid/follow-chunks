@@ -1,3 +1,4 @@
+use rangecutter::RangeExt;
 use notify::{RecursiveMode, Watcher};
 use std::{collections::{HashMap, HashSet}, ops::Range, path::{Path, PathBuf}, time::Duration};
 
@@ -13,6 +14,7 @@ use clap::Parser;
 struct Args {
     path: PathBuf,
 
+    /// How long to wait after a file changes to re-index it, in seconds.
     #[arg(short, long, value_parser=parse_duration, default_value="0")]
     debounce: Duration,
 
@@ -22,9 +24,9 @@ struct Args {
 
 #[derive(Parser, Debug, Clone)]
 struct Behavior {
-    /// Print the first chunk of a file before any changed chunks from that file.
-    #[arg(short='H', long)]
-    header: bool,
+    // /// Print the first chunk of a file before any changed chunks from that file.
+    // #[arg(short='H', long)]
+    // header: bool,
 
     /// The string to start a metadata line with. For example, “// ” would emit metadata inside of a C-style line comment.
     #[arg(short, long)]
@@ -36,140 +38,15 @@ struct Behavior {
     #[arg(short='M', long)]
     metadata_line_suffix: Option<String>,
 
+    #[arg(short='e', long)]
+    chunk_end_marker: Option<String>,
+
 }
 
 fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseFloatError> {
     let seconds = arg.parse()?;
     Ok(std::time::Duration::from_secs_f64(seconds))
 }
-
-pub trait RangeCompose<Rhs> {
-    fn compose(&self, rhs: &Rhs) -> Rhs;
-}
-
-impl<T> RangeCompose<Range<T>> for Range<T>
-where
-    T: std::cmp::PartialOrd + std::ops::Add<T, Output = T> + Clone {
-    fn compose(&self, rhs: &Range<T>) -> Range<T> {
-        assert!(self.start.clone() <= self.start.clone() + rhs.start.clone());
-        assert!((self.start.clone() + rhs.end.clone()) <= self.end.clone());
-
-        (self.start.clone() + rhs.start.clone()) .. (self.start.clone() + rhs.end.clone())
-    }
-}
-
-pub trait RangeCut<Cut> {
-    /// Split the range into the section before `middle` starts and the section that starts where `middle` ends.
-    /// Panics if `middle` contains any elements not in `self`.
-    ///
-    /// ```rust
-    /// assert_eq((0..5).cut(2), (0..2, 2..5));
-    /// ```
-    ///
-    /// ```rust
-    /// assert_eq((0..5).cut(1..3), (0..1, 3..5));
-    ///
-    /// let arr = [0, 1, 2, 3, 4];
-    ///
-    /// let middle = 1..3;
-    /// let (before, after) = arr.cut(middle);
-    ///
-    /// assert_eq!(
-    ///     arr[before]
-    ///         .into_iter()
-    ///         .chain(arr[after].into_iter())
-    ///         .collect::<Vec<_>>(),
-    ///     [0,       3, 4],
-    /// );
-    ///
-    /// assert_eq!(
-    ///     arr[middle],
-    ///     [   1, 2      ],
-    /// );
-    /// ```
-    fn cut(self, middle: Cut) -> (Self, Self)
-    where
-        Self: Sized;
-}
-
-pub trait RangeAdjacent {
-    /// Concatenate `self` and `after`, panicking if `after` doesn't immediately follow `self`.
-    ///
-    /// ```rust
-    /// assert_eq!((0..3).concat(3..4), 0..4);
-    ///
-    /// let arr = [0, 1, 2, 3, 4];
-    ///
-    /// assert_eq!([0, 1, 2      ], arr[0..3]);
-    /// assert_eq!([         3   ], arr[3..4]);
-    /// assert_eq!([0, 1, 2, 3   ], arr[(0..3).concat(3..4)]);
-    /// ```
-    fn concat(self, after: Self) -> Self;
-
-    /// Remove `prefix` from `self`, panicking if `prefix` isn't a prefix of `self`.
-    ///
-    /// ```rust
-    /// assert_eq!((0..5).remove_prefix(0..1), 1..5);
-    ///
-    /// let arr = [0, 1, 2];
-    ///
-    /// assert_eq!([0, 1, 2], arr[0..3]);
-    /// assert_eq!([0      ], arr[0..1]);
-    /// assert_eq!([   1, 2], arr[(0..3).remove_prefix(0..1)]);
-    /// ```
-    fn remove_prefix(self, prefix: Self) -> Self;
-
-    /// Remove `suffix` from `self`, panicking if `suffix` isn't a suffix of `self`.
-    ///
-    /// ```rust
-    /// assert_eq!((0..5).remove_suffix(3..5), 0..3);
-    ///
-    /// let arr = [0, 1, 2];
-    ///
-    /// assert_eq!([0, 1, 2], arr[0..3]);
-    /// assert_eq!([      2], arr[2..3]);
-    /// assert_eq!([0, 1   ], arr[(0..3).remove_suffix(2..3)]);
-    /// ```
-    fn remove_suffix(self, suffix: Self) -> Self;
-}
-
-impl<T> RangeAdjacent for Range<T>
-where
-T: std::cmp::PartialOrd + std::cmp::PartialEq {
-    fn concat(self, after: Self) -> Self {
-        assert!(self.end == after.start);
-
-        self.start..after.end
-    }
-
-    fn remove_prefix(self, prefix: Self) -> Self {
-        assert!(prefix.start == self.start);
-        assert!(prefix.end <= self.end);
-
-        prefix.end..self.end
-    }
-
-    fn remove_suffix(self, suffix: Self) -> Self {
-        assert!(self.start <= suffix.start);
-        assert!(self.end == suffix.end);
-
-        self.start..suffix.start
-    }
-}
-
-impl<T> RangeCut<Range<T>> for Range<T>
-where
-    T: std::cmp::PartialOrd + std::cmp::PartialEq
-{
-    fn cut(self, middle: Self) -> (Self, Self) {
-        assert!(self.start <= middle.start);
-        assert!(middle.end <= self.end);
-
-        (self.start..middle.start, middle.end..self.end)
-    }
-}
-
-trait RangeExt<T>: RangeAdjacent + RangeCompose<T> + RangeCut<T> {}
 
 // Returns the range of the first `"\n"` or `"\r\n"` separator in `source`.
 fn first_line_separator(source: &str) -> Option<Range<usize>> {
@@ -206,7 +83,7 @@ fn chunks(source: &str) -> impl Iterator<Item = &str> {
             let separator = first_line_separator(&source[range.clone()])
                 .map(|sep| range.compose(&sep));
             let (line, rest) = match separator {
-                Some(sep) => range.clone().cut(sep),
+                Some(sep) => range.clone().cut(&sep),
                 None => (range.clone(), range.end..range.end),
             };
 
@@ -376,6 +253,10 @@ fn walk_directory(behavior: &Behavior, state: &mut State, path: &Path) -> std::i
                 );
             }
             print!("{chunk}");
+
+            if let Some(chunk_end_marker) = &behavior.chunk_end_marker {
+                println!("{chunk_end_marker}");
+            }
         }
 
         return Ok(());
@@ -418,7 +299,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => eprintln!("watch error: {:?}", e),
     })?;
 
-    debouncer.watcher().watch(&args2.path, RecursiveMode::Recursive).unwrap();
+    debouncer.watcher().watch(&args2.path, RecursiveMode::Recursive)?;
     debouncer.cache().add_root(&args2.path, RecursiveMode::Recursive);
 
     loop {
