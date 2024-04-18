@@ -55,9 +55,7 @@ fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseFloat
 
 // Returns the range of the first `"\n"` or `"\r\n"` separator in `source`.
 fn first_line_separator(source: &str) -> Option<Range<usize>> {
-    let Some(newline) = source.find('\n') else {
-        return None;
-    };
+    let newline = source.find('\n')?;
 
     let end = newline + '\n'.len_utf8();
     let mut start = newline;
@@ -108,7 +106,7 @@ fn chunks(source: &str) -> impl Iterator<Item = &str> {
 
 #[test]
 fn test_chunks() {
-    let mut s = r#"
+    let s = r#"
 
 ^def main(
     a,
@@ -153,10 +151,7 @@ struct State {
 }
 
 /// The hash set contains the trimmed chunks of `source`.
-fn ingest<'a, 'b>(
-    old_chunks: &'a HashSet<String>,
-    source: &'b str,
-) -> (HashSet<String>, Vec<&'b str>) {
+fn ingest<'b>(old_chunks: &HashSet<String>, source: &'b str) -> (HashSet<String>, Vec<&'b str>) {
     let mut set = HashSet::new();
     let mut vec = Vec::new();
 
@@ -289,7 +284,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(events) => {
                 for event in events {
                     for path in event.paths.iter() {
-                        if let Err(e) = walk_directory(&args.behavior, &mut state, &path) {
+                        if let Err(e) = walk_directory(&args.behavior, &mut state, path) {
                             eprintln!("walk error: {:?}", e);
                         }
                     }
