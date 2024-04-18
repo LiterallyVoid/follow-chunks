@@ -157,6 +157,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "follow-chunks"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "notify",
+ "notify-debouncer-full",
+ "rangecutter",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fsevent-sys"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -413,18 +425,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "tail-chunks"
-version = "0.1.0"
-dependencies = [
- "clap",
- "notify",
- "notify-debouncer-full",
- "rangecutter",
- "serde",
- "serde_json",
 ]
 
 [[package]]

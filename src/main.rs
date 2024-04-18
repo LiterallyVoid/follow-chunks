@@ -1,15 +1,22 @@
-use rangecutter::RangeExt;
 use notify::{RecursiveMode, Watcher};
-use std::{collections::{HashMap, HashSet}, ops::Range, path::{Path, PathBuf}, time::Duration};
+use rangecutter::RangeExt;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use clap::Parser;
 
 /// Split files into chunks, and stream new chunks in whenever files are changed.
 ///
 /// A chunk ends wherever an empty line is followed by an unindented line.
-/// 
-/// Chunks are deduplicated ignoring leading and trailing whitespace, so that when a new chunk is added to a file the empty lines separating it from the previous chunk will not cause the previous chunk to be considered updated, even though the previous chunk now contains trailing newlines.
 ///
+/// Chunks are deduplicated ignoring leading and trailing whitespace, so that
+/// when a new chunk is added to a file the empty lines separating it from the
+/// previous chunk will not cause the previous chunk to be considered updated, even
+/// though the previous chunk now contains trailing newlines.
 #[derive(Parser, Debug, Clone)]
 struct Args {
     path: PathBuf,
@@ -27,7 +34,6 @@ struct Behavior {
     // /// Print the first chunk of a file before any changed chunks from that file.
     // #[arg(short='H', long)]
     // header: bool,
-
     /// The string to start a metadata line with. For example, “// ” would emit metadata inside of a C-style line comment.
     #[arg(short, long)]
     metadata_line_prefix: Option<String>,
@@ -35,12 +41,11 @@ struct Behavior {
     /// The string to end a metadata line with.
     ///
     /// For example, if `metadata_line_prefix` is “/* ” and this is “ */”, metadata will be emitted inside of a C-style multiline comment.
-    #[arg(short='M', long)]
+    #[arg(short = 'M', long)]
     metadata_line_suffix: Option<String>,
 
-    #[arg(short='e', long)]
+    #[arg(short = 'e', long)]
     chunk_end_marker: Option<String>,
-
 }
 
 fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseFloatError> {
@@ -80,8 +85,8 @@ fn chunks(source: &str) -> impl Iterator<Item = &str> {
         let start = range.start;
 
         while !range.is_empty() {
-            let separator = first_line_separator(&source[range.clone()])
-                .map(|sep| range.compose(&sep));
+            let separator =
+                first_line_separator(&source[range.clone()]).map(|sep| range.compose(&sep));
             let (line, rest) = match separator {
                 Some(sep) => range.clone().cut(&sep),
                 None => (range.clone(), range.end..range.end),
@@ -126,21 +131,20 @@ fn test_chunks() {
 
     let chunks = chunks(s).collect::<Vec<_>>();
 
-    assert_eq!([
-        chunks[0],
-
-        // Remove `^` character
-        &chunks[1][1..],
-
-        // Remove `^` character
-        &chunks[2][1..],
-
-        // Remove `^` character
-        &chunks[3][1..],
-
-        // Remove `^` character
-        &chunks[4][1..],
-    ][..], split);
+    assert_eq!(
+        [
+            chunks[0],
+            // Remove `^` character
+            &chunks[1][1..],
+            // Remove `^` character
+            &chunks[2][1..],
+            // Remove `^` character
+            &chunks[3][1..],
+            // Remove `^` character
+            &chunks[4][1..],
+        ][..],
+        split
+    );
 }
 
 #[derive(Default, Debug)]
@@ -149,7 +153,10 @@ struct State {
 }
 
 /// The hash set contains the trimmed chunks of `source`.
-fn ingest<'a, 'b>(old_chunks: &'a HashSet<String>, source: &'b str) -> (HashSet<String>, Vec<&'b str>) {
+fn ingest<'a, 'b>(
+    old_chunks: &'a HashSet<String>,
+    source: &'b str,
+) -> (HashSet<String>, Vec<&'b str>) {
     let mut set = HashSet::new();
     let mut vec = Vec::new();
 
@@ -163,7 +170,7 @@ fn ingest<'a, 'b>(old_chunks: &'a HashSet<String>, source: &'b str) -> (HashSet<
 
         vec.push(chunk);
     }
-    
+
     (set, vec)
 }
 
@@ -173,12 +180,8 @@ impl State {
 
         let empty = HashSet::new();
         let old_chunk_set = match &entry {
-            std::collections::hash_map::Entry::Occupied(entry) => {
-                entry.get()
-            },
-            std::collections::hash_map::Entry::Vacant(_) => {
-                &empty
-            },
+            std::collections::hash_map::Entry::Occupied(entry) => entry.get(),
+            std::collections::hash_map::Entry::Vacant(_) => &empty,
         };
 
         let (new_chunk_set, new_chunks) = ingest(old_chunk_set, source);
@@ -186,7 +189,7 @@ impl State {
         match entry {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 entry.insert(new_chunk_set);
-                }
+            }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(new_chunk_set);
             }
@@ -202,30 +205,19 @@ fn test_state() {
 
     assert_eq!(
         state.ingest("a.txt".into(), "foo\n\n\nbar"),
-        [
-            "foo\n\n\n",
-            "bar",
-        ],
+        ["foo\n\n\n", "bar",],
     );
     assert_eq!(
         state.ingest("a.txt".into(), "foo\n\n\nbar\nbaz\n\n"),
-        [
-            "bar\nbaz\n\n",
-        ],
+        ["bar\nbaz\n\n",],
     );
     assert_eq!(
         state.ingest("a.txt".into(), "foo\n\n\nbar\n\nbaz\n\n"),
-        [
-            "bar\n\n",
-            "baz\n\n",
-        ],
+        ["bar\n\n", "baz\n\n",],
     );
     assert_eq!(
         state.ingest("b.txt".into(), "foo\n\n\nbar\nbaz\n\n"),
-        [
-            "foo\n\n\n",
-            "bar\nbaz\n\n",
-        ],
+        ["foo\n\n\n", "bar\nbaz\n\n",],
     );
 }
 
@@ -241,15 +233,19 @@ fn walk_directory(behavior: &Behavior, state: &mut State, path: &Path) -> std::i
                     path: &'a Path,
                 }
 
-                let metadata = Metadata {
-                    path,
-                };
+                let metadata = Metadata { path };
 
                 println!(
                     "{}{}{}",
-                    behavior.metadata_line_prefix.as_ref().unwrap_or(&String::new()),
+                    behavior
+                        .metadata_line_prefix
+                        .as_ref()
+                        .unwrap_or(&String::new()),
                     serde_json::to_string(&metadata).unwrap(),
-                    behavior.metadata_line_suffix.as_ref().unwrap_or(&String::new()),
+                    behavior
+                        .metadata_line_suffix
+                        .as_ref()
+                        .unwrap_or(&String::new()),
                 );
             }
             print!("{chunk}");
@@ -286,21 +282,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args2 = args.clone();
 
-    let mut debouncer = notify_debouncer_full::new_debouncer(args2.debounce, None, move |res: notify_debouncer_full::DebounceEventResult| match res {
-        Ok(events) => {
-            for event in events {
-                for path in event.paths.iter() {
-                    if let Err(e) = walk_directory(&args.behavior, &mut state, &path) {
-                        eprintln!("walk error: {:?}", e);
+    let mut debouncer = notify_debouncer_full::new_debouncer(
+        args2.debounce,
+        None,
+        move |res: notify_debouncer_full::DebounceEventResult| match res {
+            Ok(events) => {
+                for event in events {
+                    for path in event.paths.iter() {
+                        if let Err(e) = walk_directory(&args.behavior, &mut state, &path) {
+                            eprintln!("walk error: {:?}", e);
+                        }
                     }
                 }
             }
+            Err(e) => eprintln!("watch error: {:?}", e),
         },
-        Err(e) => eprintln!("watch error: {:?}", e),
-    })?;
+    )?;
 
-    debouncer.watcher().watch(&args2.path, RecursiveMode::Recursive)?;
-    debouncer.cache().add_root(&args2.path, RecursiveMode::Recursive);
+    debouncer
+        .watcher()
+        .watch(&args2.path, RecursiveMode::Recursive)?;
+    debouncer
+        .cache()
+        .add_root(&args2.path, RecursiveMode::Recursive);
 
     loop {
         std::thread::yield_now();
