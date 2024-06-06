@@ -21,12 +21,23 @@ use clap::Parser;
 struct Args {
     path: PathBuf,
 
+    #[arg(short, long)]
+    include: Vec<String>,
+
+    /// List of globs to exclude.
+    #[arg(short, long)]
+    exclude: Vec<String>,
+
     /// How long to wait after a file changes to re-index it, in seconds.
     #[arg(short, long, value_parser=parse_duration, default_value="0")]
     debounce: Duration,
 
     #[command(flatten)]
     behavior: Behavior,
+
+    /// Instead of writing to standard out, write ``
+    #[arg(trailing_var_arg = true)]
+    command: Option<Vec<String>>,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -216,7 +227,18 @@ fn test_state() {
     );
 }
 
-fn walk_directory(behavior: &Behavior, state: &mut State, path: &Path) -> std::io::Result<()> {
+fn walk_directory(
+    exclude: &[glob::Pattern],
+    behavior: &Behavior,
+    state: &mut State,
+    path: &Path,
+) -> std::io::Result<()> {
+    for pattern in exclude {
+        if pattern.matches(&path.to_string_lossy()) {
+            return Ok(());
+        }
+    }
+
     if let Ok(contents) = std::fs::read_to_string(path) {
         let chunks = state.ingest(path.to_owned(), &contents);
 
@@ -261,7 +283,7 @@ fn walk_directory(behavior: &Behavior, state: &mut State, path: &Path) -> std::i
         let entry = entry?;
         let subpath = &entry.path();
 
-        walk_directory(behavior, state, subpath)?;
+        walk_directory(exclude, behavior, state, subpath)?;
     }
 
     Ok(())
@@ -272,8 +294,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut state = State::default();
 
+    let exclude = args
+        .exclude
+        .iter()
+        .map(|s| glob::Pattern::new(s))
+        .collect::<Result<Vec<_>, _>>()?;
+
     // @TODO: There's a race condition here, where files can change between the initial walk and the watcher starting up.
-    walk_directory(&args.behavior, &mut state, &args.path)?;
+    walk_directory(&exclude, &args.behavior, &mut state, &args.path)?;
 
     let args2 = args.clone();
 
@@ -284,7 +312,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(events) => {
                 for event in events {
                     for path in event.paths.iter() {
-                        if let Err(e) = walk_directory(&args.behavior, &mut state, path) {
+                        if let Err(e) = walk_directory(&exclude, &args.behavior, &mut state, path) {
                             eprintln!("walk error: {:?}", e);
                         }
                     }
