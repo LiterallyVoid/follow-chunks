@@ -55,7 +55,7 @@ struct Behavior {
     #[arg(short = 'M', long)]
     metadata_line_suffix: Option<String>,
 
-    #[arg(short = 'e', long)]
+    #[arg(short = 'E', long)]
     chunk_end_marker: Option<String>,
 }
 
